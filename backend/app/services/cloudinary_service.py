@@ -1,4 +1,4 @@
-﻿import io
+import io
 import os
 from typing import Union
 
@@ -66,3 +66,19 @@ def upload_image(image_array_or_path: Union[np.ndarray, str]) -> str:
         )
 
     return secure_url
+
+def delete_image(secure_url: str) -> None:
+    """Extract public_id from Cloudinary URL and delete it from Cloudinary."""
+    if not secure_url or "cloudinary.com" not in secure_url:
+        return
+    
+    try:
+        parts = secure_url.split("/upload/")
+        if len(parts) > 1:
+            path_part = parts[1]
+            if path_part.startswith("v"):
+                path_part = path_part.split("/", 1)[-1]
+            public_id = path_part.rsplit(".", 1)[0]
+            cloudinary.uploader.destroy(public_id)
+    except Exception as e:
+        print(f"Failed to delete Cloudinary image: {e}")

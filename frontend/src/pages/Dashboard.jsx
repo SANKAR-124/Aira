@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchVideos, fetchHighRiskAlerts } from '../api/api';
+import { fetchVideos, fetchHighRiskAlerts, deleteVideo } from '../api/api';
 import ImageModal from '../components/ImageModal';
-import { Video, AlertTriangle } from 'lucide-react';
+import { Video, AlertTriangle, Trash2 } from 'lucide-react';
 
 export default function Dashboard() {
   const [videos, setVideos] = useState([]);
@@ -28,10 +28,29 @@ export default function Dashboard() {
     }
     loadData();
     
-    // Auto-refresh every 10 seconds for live updates on video processing
-    const interval = setInterval(loadData, 10000);
+    // Auto-refresh every 3 seconds for live updates on video processing
+    const interval = setInterval(loadData, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleDelete = async (e, videoId) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this failed video and its data?")) return;
+    
+    try {
+      await deleteVideo(videoId);
+      // Immediately refresh data
+      const [videoData, alertData] = await Promise.all([
+        fetchVideos(),
+        fetchHighRiskAlerts()
+      ]);
+      setVideos(videoData);
+      setAlerts(alertData);
+    } catch (err) {
+      console.error("Failed to delete video:", err);
+      alert("Failed to delete video.");
+    }
+  };
 
   if (loading && videos.length === 0) {
     return (
@@ -105,9 +124,25 @@ export default function Dashboard() {
                         {new Date(video.created_at).toLocaleString()}
                       </div>
                     </div>
-                    <div className="status-indicator">
-                      <span className={`dot ${video.processed_status}`}></span>
-                      <span style={{ textTransform: 'capitalize' }}>{video.processed_status}</span>
+                    <div className="status-indicator" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className={`dot ${video.processed_status}`}></span>
+                        <span style={{ textTransform: 'capitalize' }}>{video.processed_status}</span>
+                      </div>
+                      
+                      {video.processed_status === 'failed' && (
+                        <button 
+                          onClick={(e) => handleDelete(e, video.id)}
+                          style={{
+                            background: 'transparent', border: 'none', 
+                            color: 'var(--danger)', cursor: 'pointer',
+                            padding: '4px'
+                          }}
+                          title="Delete failed video"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

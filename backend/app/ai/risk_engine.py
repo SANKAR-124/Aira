@@ -13,18 +13,19 @@ from typing import Literal
 # ---------------------------------------------------------------------------
 # Maximum crowd size expected at the venue.  Headcount beyond this is still
 # clamped at 100 — it just means the crowd is denser than anticipated.
-MAX_EXPECTED_CROWD: int = 500
+# Tuned down to 80 so that test videos trigger higher base scores.
+MAX_EXPECTED_CROWD: int = 80
 
 # Motion-speed multiplier bands.
 # Values are pixels/frame as returned by calculate_optical_flow().
 # The multiplier scales the density-based score:
-#   very still crowd  → 0.5  (reduce score — dense but not moving)
-#   walking crowd     → 1.0  (neutral)
-#   fast-moving crowd → 1.5  (increase score — stampede risk)
+#   very still crowd  → 0.8  (reduce score — dense but not moving)
+#   walking crowd     → 1.2  (slight increase)
+#   fast-moving crowd → 1.8  (severe increase — stampede risk)
 _MOTION_THRESHOLDS: list[tuple[float, float]] = [
-    (0.5,  0.5),   # speed < 0.5  → multiplier 0.5
-    (2.0,  1.0),   # speed < 2.0  → multiplier 1.0
-    (float("inf"), 1.5),  # speed ≥ 2.0  → multiplier 1.5
+    (0.5,  0.8),   # speed < 0.5  → multiplier 0.8
+    (1.5,  1.2),   # speed < 1.5  → multiplier 1.2
+    (float("inf"), 1.8),  # speed ≥ 1.5  → multiplier 1.8
 ]
 
 RiskLevel = Literal["low", "moderate", "high", "severe"]

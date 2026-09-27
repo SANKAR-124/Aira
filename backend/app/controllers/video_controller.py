@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 from app.ai.pipeline import run_pipeline
 from app.db.session import get_db
 from app.models.video import videos
+from app.models.analytics_event import analytics_events
 from app.schemas.video_schema import VideoUploadResponse
+from app.services.cloudinary_service import delete_image
 
 logger = logging.getLogger(__name__)
 
@@ -103,3 +105,48 @@ async def upload_video(
 
     # ---- 4. Return 202 immediately -------------------------------------------
     return VideoUploadResponse.model_validate(video_row)
+
+def _background_delete_images(urls: list[str]) -> None:
+    """Helper to delete multiple Cloudinary images in the background."""
+    for url in urls:
+        try:
+            delete_image(url)
+        except Exception as e:
+            logger.error(f"Failed to delete Cloudinary image: {e}")
+
+@router.delete(
+    "/{video_id}",
+    status_code=200,
+    summary="Delete a video and all its data",
+    description="Deletes the local video file, Cloudinary alert images, and all database records for this video."
+)
+def delete_video(video_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # 1. Fetch video
+    video_row = db.query(videos).filter(videos.id == video_id).first()
+    if not video_row:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    # 2. Delete Cloudinary images associated with this video (IN BACKGROUND)
+    events_with_images = db.query(analytics_events).filter(
+        analytics_events.video_id == video_id,
+        analytics_events.alert_image_url.is_not(None)
+    ).all()
+    
+    urls_to_delete = [event.alert_image_url for event in events_with_images]
+    if urls_to_delete:
+        background_tasks.add_task(_background_delete_images, urls_to_delete)
+            
+    # 3. Delete local video file if it exists
+    save_path = os.path.join(TEMP_VIDEO_DIR, video_row.original_filename)
+    if os.path.exists(save_path):
+        try:
+            os.remove(save_path)
+            logger.info(f"Deleted local video file: {save_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete local video file: {e}")
+            
+    # 4. Delete from DB (analytics_events cascade automatically)
+    db.delete(video_row)
+    db.commit()
+    
+    return {"message": "Video and all associated data deleted successfully"}

@@ -39,3 +39,13 @@ export async function fetchHighRiskAlerts() {
   }
   return response.json();
 }
+
+export async function deleteVideo(videoId) {
+  const response = await fetch(`${API_BASE_URL}/videos/${videoId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete video');
+  }
+  return response.json();
+}
