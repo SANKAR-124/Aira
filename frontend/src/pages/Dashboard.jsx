@@ -127,12 +127,12 @@ export default function Dashboard() {
                     }}
                     style={{ cursor: video.processed_status === 'completed' ? 'pointer' : 'default' }}
                   >
-                    <div>
-                      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{video.original_filename}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {new Date(video.created_at).toLocaleString()}
-                      </div>
+                  <div>
+                    <div className="video-item-name">{video.original_filename}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {new Date(video.created_at).toLocaleString()}
                     </div>
+                  </div>
                     <div className="status-indicator" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span className={`dot ${video.processed_status}`}></span>

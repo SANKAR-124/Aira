@@ -272,8 +272,13 @@ c. Push to GitHub.
 | Motion multiplier — very still (< threshold px/frame) | threshold=0.5, ×0.8 | threshold=1.0, ×0.8 | Wider still-crowd band; very small optical-flow values were wrongly classified as "walking". |
 | Motion multiplier — walking (< threshold px/frame) | threshold=1.5, ×1.2 | threshold=3.0, ×1.1 | Threshold raised to accommodate normal pedestrian movement; multiplier eased from 1.2 → 1.1. |
 | Motion multiplier — panic (≥ threshold px/frame) | ×1.8 | ×1.5 | 1.8× was too aggressive; amplified routine movement into "severe". |
+| Risk-level `high` lower boundary | score ≥ 60 | score ≥ **70** | Scores 60–69 reclassified as `moderate`; only genuinely dense + fast crowds reach `high`. |
 
-Risk-level category boundaries (`low < 30`, `moderate < 60`, `high < 80`, `severe ≥ 80`) are **unchanged** — only the score itself is better-calibrated.
+Current risk-level category boundaries:
+- `low` → score 0 – 29
+- `moderate` → score 30 – 69
+- `high` → score 70 – 79
+- `severe` → score 80 – 100
 
 #### `pipeline.py` — Frame sampling only (rev 3, current)
 
@@ -300,6 +305,25 @@ Rev 2 introduced a `ALERT_COOLDOWN_SEC = 3.0` cooldown that only allowed one Clo
 - Increase `MAX_EXPECTED_CROWD` if the venue has more than 200 people in a typical camera shot.
 - Adjust `FRAME_SAMPLE_INTERVAL` (e.g., `10`) for longer/higher-fps videos to further reduce upload count.
 - Do **not** re-introduce a cooldown without also updating the dashboard to handle NULL `alert_image_url` gracefully (e.g., show a placeholder card instead of a broken image).
+
+#### `cloudinary_service.py` + `pipeline.py` — Upload resilience (rev 4)
+
+**Problem:** The pipeline was failing mid-video whenever a Cloudinary upload hit a network timeout (`read timeout=None`). A single timed-out request on one frame propagated to the outer try/except and marked the entire video as `failed`.
+
+**Fixes:**
+
+| File | Change | Detail |
+|---|---|---|
+| `cloudinary_service.py` | Added `timeout` parameter to `upload_image()` | Defaults to `60 s`. Passed as `timeout=UPLOAD_TIMEOUT_SEC` from the pipeline so every upload has a hard deadline. |
+| `pipeline.py` | Added retry loop around each upload | Up to `UPLOAD_MAX_RETRIES = 3` attempts with `UPLOAD_RETRY_DELAY = 5.0 s` back-off between retries. If all attempts fail, logs an error and **continues** processing the next frame — the pipeline no longer dies on a single upload failure. |
+
+New tuning constants in `pipeline.py`:
+
+| Constant | Default | Purpose |
+|---|---|---|
+| `UPLOAD_TIMEOUT_SEC` | `60` | Hard per-attempt deadline for a Cloudinary upload. |
+| `UPLOAD_MAX_RETRIES` | `3` | Number of upload attempts before giving up on one frame. |
+| `UPLOAD_RETRY_DELAY` | `5.0` | Seconds to wait between retry attempts. |
 
 ---
 

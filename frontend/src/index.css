@@ -34,36 +34,74 @@ h1, h2, h3, h4, p {
   margin: 0;
 }
 
-/* Layout */
+/* ─── Layout ──────────────────────────────────────────────────────────────── */
+
 .app-container {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+/* Topbar */
 .topbar {
   background-color: var(--primary);
-  padding: 1rem 2rem;
+  padding: 0.875rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--border);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  gap: 1rem;
 }
 
 .topbar-title {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.5px;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;          /* allow flex child to shrink */
 }
 
+/* Hide the long text label on very small screens, keep icon */
+@media (max-width: 480px) {
+  .topbar-title span.topbar-label {
+    display: none;
+  }
+  .topbar {
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Main content */
 .main-content {
   padding: 2rem;
   flex: 1;
 }
+@media (max-width: 768px) {
+  .main-content {
+    padding: 1rem;
+  }
+}
 
-/* Buttons */
+/* ─── Page-level grid ─────────────────────────────────────────────────────── */
+
+.grid-layout {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 2rem;
+}
+@media (max-width: 1024px) {
+  .grid-layout {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+
 .btn {
   background-color: var(--accent);
   color: white;
@@ -76,6 +114,8 @@ h1, h2, h3, h4, p {
   align-items: center;
   gap: 0.5rem;
   transition: background-color 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn:hover {
   background-color: #2563eb;
@@ -91,7 +131,8 @@ h1, h2, h3, h4, p {
   cursor: not-allowed;
 }
 
-/* Cards */
+/* ─── Cards ───────────────────────────────────────────────────────────────── */
+
 .card {
   background-color: var(--bg-card);
   border-radius: 8px;
@@ -99,21 +140,12 @@ h1, h2, h3, h4, p {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
 }
 
-.grid-layout {
-  display: grid;
-  grid-template-columns: 1fr 350px;
-  gap: 2rem;
-}
-@media (max-width: 1024px) {
-  .grid-layout {
-    grid-template-columns: 1fr;
-  }
-}
+/* ─── Alerts grid ─────────────────────────────────────────────────────────── */
 
-/* Dashboard Grid */
 .alerts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  /* 2 cols on tablet, 1 col on phone */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
   gap: 1rem;
   margin-top: 1rem;
 }
@@ -146,11 +178,14 @@ h1, h2, h3, h4, p {
 }
 
 .alert-info {
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
 }
+
+/* ─── Badges ──────────────────────────────────────────────────────────────── */
 
 .badge {
   padding: 0.25rem 0.5rem;
@@ -158,17 +193,19 @@ h1, h2, h3, h4, p {
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
+  white-space: nowrap;
 }
-.badge.low { background-color: var(--success); color: white; }
+.badge.low      { background-color: var(--success); color: white; }
 .badge.moderate { background-color: var(--warning); color: black; }
-.badge.high { background-color: #f97316; color: white; }
-.badge.severe { background-color: var(--danger); color: white; }
+.badge.high     { background-color: #f97316; color: white; }
+.badge.severe   { background-color: var(--danger); color: white; }
 
 .font-mono {
   font-family: var(--font-mono);
 }
 
-/* Modals */
+/* ─── Modals ──────────────────────────────────────────────────────────────── */
+
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -177,7 +214,8 @@ h1, h2, h3, h4, p {
   align-items: center;
   justify-content: center;
   z-index: 50;
-  padding: 2rem;
+  padding: 1rem;            /* tighter on mobile */
+  overflow-y: auto;
 }
 
 .modal-content {
@@ -190,14 +228,20 @@ h1, h2, h3, h4, p {
   position: relative;
 }
 .modal-content.large {
-  max-width: 900px;
+  max-width: min(900px, 95vw);  /* never wider than viewport */
   padding: 1rem;
+}
+
+@media (max-width: 480px) {
+  .modal-content {
+    padding: 1.25rem;
+  }
 }
 
 .close-btn {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
+  top: 0.75rem;
+  right: 0.75rem;
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -207,7 +251,8 @@ h1, h2, h3, h4, p {
   color: var(--text-main);
 }
 
-/* Forms */
+/* ─── Forms / dropzone ────────────────────────────────────────────────────── */
+
 .dropzone {
   border: 2px dashed var(--border);
   border-radius: 8px;
@@ -222,9 +267,13 @@ h1, h2, h3, h4, p {
   background-color: rgba(59, 130, 246, 0.05);
 }
 
-/* Table */
+/* ─── Analytics table ─────────────────────────────────────────────────────── */
+
+/* Wrapper already has overflowX: auto in JSX — this keeps columns from
+   collapsing to nothing on narrow screens. */
 .data-table {
   width: 100%;
+  min-width: 560px;         /* force horizontal scroll before columns squish */
   border-collapse: collapse;
   margin-top: 1rem;
 }
@@ -232,6 +281,7 @@ h1, h2, h3, h4, p {
   padding: 0.75rem 1rem;
   text-align: left;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 .data-table th {
   color: var(--text-muted);
@@ -244,25 +294,47 @@ h1, h2, h3, h4, p {
   background-color: var(--bg-card-hover);
 }
 
-/* Video List */
+/* ─── Video list ──────────────────────────────────────────────────────────── */
+
 .video-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 1rem;
 }
+
 .video-item {
   background-color: var(--primary);
   border-radius: 6px;
-  padding: 1rem;
+  padding: 0.875rem 1rem;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
   border: 1px solid transparent;
 }
 .video-item:hover {
   border-color: var(--border);
+}
+
+/* On mobile the filename can be long — truncate gracefully */
+.video-item-name {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+@media (max-width: 480px) {
+  .video-item {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .video-item-name {
+    max-width: 100%;
+  }
 }
 
 .status-indicator {
@@ -270,18 +342,22 @@ h1, h2, h3, h4, p {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
+  flex-shrink: 0;
 }
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
 }
-.dot.pending { background-color: var(--warning); }
+.dot.pending    { background-color: var(--warning); }
 .dot.processing { background-color: var(--accent); animation: pulse 1.5s infinite; }
-.dot.completed { background-color: var(--success); }
-.dot.failed { background-color: var(--danger); }
+.dot.completed  { background-color: var(--success); }
+.dot.failed     { background-color: var(--danger); }
+
+/* ─── Animations ──────────────────────────────────────────────────────────── */
 
 @keyframes pulse {
-  0% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%   { opacity: 1; }
+  50%  { opacity: 0.4; }
   100% { opacity: 1; }
 }
 
@@ -295,12 +371,14 @@ h1, h2, h3, h4, p {
   margin: 0 auto;
 }
 @keyframes spin {
-  0% { transform: rotate(0deg); }
+  0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
+/* ─── Empty state ─────────────────────────────────────────────────────────── */
+
 .empty-state {
   text-align: center;
-  padding: 3rem;
+  padding: 3rem 1.5rem;
   color: var(--text-muted);
 }

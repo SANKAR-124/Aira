@@ -63,7 +63,7 @@ export default function AnalyticsView() {
         <div className="card empty-state">No events recorded for this video.</div>
       ) : (
         <>
-          <div className="card" style={{ marginBottom: '2rem', height: '400px', padding: '2rem' }}>
+          <div className="card" style={{ marginBottom: '2rem', height: 'clamp(260px, 40vw, 400px)', padding: '1rem 0.5rem 1rem 0' }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={events} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#475569" vertical={false} />

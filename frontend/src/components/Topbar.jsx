@@ -12,7 +12,7 @@ export default function Topbar({ onUploadClick }) {
         style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}
       >
         <ShieldAlert size={28} color="#3b82f6" />
-        AIRA / RCMP Security Console
+        <span className="topbar-label">AIRA / RCMP Security Console</span>
       </div>
       <button className="btn" onClick={onUploadClick}>
         <UploadCloud size={20} />
