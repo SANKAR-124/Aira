@@ -1,22 +1,33 @@
 """
-Master AI Pipeline — Stage 7b
-==============================
+Master AI Pipeline — Stage 7b  (rev 3 — frame sampling only)
+=============================================================
 Orchestrates the full per-video analysis loop:
   1. Mark video as 'processing' in the DB.
   2. Read frames from the video file.
   3. Run density estimation (CSRNet) and motion tracking (Farneback) on every
-     consecutive frame pair.
+     Nth frame (configurable via FRAME_SAMPLE_INTERVAL) instead of every frame.
+     This dramatically reduces processing time and Cloudinary uploads.
   4. Run the risk engine to get a score + level.
-  5. For high/severe frames: overlay a heatmap, upload to Cloudinary, and save
-     the alert image URL.
-  6. Persist every frame's analytics to the `analytics_events` table.
+  5. For every high/severe sampled frame: overlay a heatmap, upload to
+     Cloudinary, and save the alert image URL.  Every alert event therefore
+     always has a valid URL — no NULL alert_image_url, no broken images.
+  6. Persist every sampled frame's analytics to the `analytics_events` table.
   7. On success: mark video 'completed' and delete the local file.
   8. On any exception: mark video 'failed' and leave the local file for debug.
+
+Revision notes (rev 3):
+  - Removed ALERT_COOLDOWN_SEC throttling entirely.  The cooldown caused
+    high/severe events to be stored in the DB with alert_image_url = NULL,
+    which rendered as broken images on the dashboard.
+  - FRAME_SAMPLE_INTERVAL = 5 alone is the upload-volume control.  At 25 fps
+    this gives ~5 analysis points/second and caps sampled frames at ~110 for
+    a 22-second video — no extra throttle needed.
 """
 
 import logging
 import os
 import tempfile
+import time
 
 import cv2
 import numpy as np
@@ -30,6 +41,24 @@ from app.models.video import videos
 from app.services.cloudinary_service import upload_image
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Pipeline tuning constants
+# ---------------------------------------------------------------------------
+
+# Process 1 in every N frames.  At 25 fps, FRAME_SAMPLE_INTERVAL=5 gives
+# ~5 analysis points per second — adequate for crowd monitoring and keeps
+# the total number of sampled frames (and Cloudinary uploads) manageable.
+# Increase this value (e.g. 10) for longer/higher-fps videos.
+FRAME_SAMPLE_INTERVAL: int = 5
+
+# Cloudinary upload resilience settings.
+# UPLOAD_TIMEOUT_SEC: hard deadline for a single upload attempt (seconds).
+# UPLOAD_MAX_RETRIES: how many times to retry before giving up on one frame.
+# UPLOAD_RETRY_DELAY: seconds to wait between retry attempts.
+UPLOAD_TIMEOUT_SEC: int = 60
+UPLOAD_MAX_RETRIES: int = 3
+UPLOAD_RETRY_DELAY: float = 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +147,8 @@ def run_pipeline(video_path: str, video_id: int) -> None:
         return
 
     fps: float = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    frame_number: int = 0  # 0-indexed; prev_frame is frame 0
+    raw_frame_index: int = 0      # absolute frame counter (every frame read from cap)
+    processed_frames: int = 0     # count of frames actually analysed (sampled subset)
 
     # ------------------------------------------------------------------
     # Step 3 — Frame-processing loop (wrapped in try/except per spec).
@@ -131,8 +161,17 @@ def run_pipeline(video_path: str, video_id: int) -> None:
                 if not ret or curr_frame is None:
                     break  # End of video — normal exit.
 
-                frame_number += 1
-                timestamp_sec: float = frame_number / fps
+                raw_frame_index += 1
+                timestamp_sec: float = raw_frame_index / fps
+
+                # ---- Frame sampling: skip frames not in the sample window --
+                if raw_frame_index % FRAME_SAMPLE_INTERVAL != 0:
+                    # Still advance prev_frame so optical flow stays accurate
+                    # on the next sampled pair.
+                    prev_frame = curr_frame
+                    continue
+
+                processed_frames += 1
 
                 # ---- Density estimation (CSRNet) ----------------------
                 headcount, density_map = process_frame(curr_frame)
@@ -143,12 +182,14 @@ def run_pipeline(video_path: str, video_id: int) -> None:
                 # ---- Risk engine ---------------------------------------
                 risk_score, risk_level = calculate_risk(headcount, motion_speed)
 
-                # ---- Alert image for high/severe frames ----------------
+                # ---- Alert image for every high/severe sampled frame --------
+                # Every high/severe frame that passes the sample window gets its
+                # own Cloudinary upload.  Retried up to UPLOAD_MAX_RETRIES times
+                # so a single network timeout cannot kill the whole pipeline.
                 alert_image_url: str | None = None
                 if risk_level in ("high", "severe"):
                     overlay = _build_heatmap_overlay(curr_frame, density_map)
 
-                    # Save the overlay to a temp file, upload, then remove.
                     with tempfile.NamedTemporaryFile(
                         suffix=".jpg", delete=False
                     ) as tmp:
@@ -156,7 +197,37 @@ def run_pipeline(video_path: str, video_id: int) -> None:
 
                     try:
                         cv2.imwrite(tmp_path, overlay)
-                        alert_image_url = upload_image(tmp_path)
+
+                        # Retry loop — guards against transient Cloudinary
+                        # network timeouts without aborting the whole video.
+                        for attempt in range(1, UPLOAD_MAX_RETRIES + 1):
+                            try:
+                                alert_image_url = upload_image(
+                                    tmp_path,
+                                    timeout=UPLOAD_TIMEOUT_SEC,
+                                )
+                                logger.info(
+                                    "Alert uploaded video_id=%s frame=%d "
+                                    "ts=%.2fs (attempt %d/%d)",
+                                    video_id, raw_frame_index, timestamp_sec,
+                                    attempt, UPLOAD_MAX_RETRIES,
+                                )
+                                break  # success — exit retry loop
+                            except Exception as upload_err:
+                                logger.warning(
+                                    "Cloudinary upload failed video_id=%s "
+                                    "frame=%d attempt=%d/%d: %s",
+                                    video_id, raw_frame_index,
+                                    attempt, UPLOAD_MAX_RETRIES, upload_err,
+                                )
+                                if attempt < UPLOAD_MAX_RETRIES:
+                                    time.sleep(UPLOAD_RETRY_DELAY)
+                                else:
+                                    logger.error(
+                                        "All %d upload attempts failed for "
+                                        "video_id=%s frame=%d — skipping image.",
+                                        UPLOAD_MAX_RETRIES, video_id, raw_frame_index,
+                                    )
                     finally:
                         if os.path.isfile(tmp_path):
                             os.remove(tmp_path)
@@ -164,7 +235,7 @@ def run_pipeline(video_path: str, video_id: int) -> None:
                 # ---- Persist analytics event row -----------------------
                 event = analytics_events(
                     video_id=video_id,
-                    frame_number=frame_number,
+                    frame_number=raw_frame_index,
                     timestamp_sec=round(timestamp_sec, 3),
                     headcount=headcount,
                     motion_speed=round(motion_speed, 4),
@@ -176,8 +247,9 @@ def run_pipeline(video_path: str, video_id: int) -> None:
                 db.commit()
 
                 logger.debug(
-                    "frame=%d  headcount=%d  speed=%.3f  risk=%s(%d)  url=%s",
-                    frame_number, headcount, motion_speed, risk_level, risk_score,
+                    "frame=%d (sample #%d)  headcount=%d  speed=%.3f  risk=%s(%d)  url=%s",
+                    raw_frame_index, processed_frames,
+                    headcount, motion_speed, risk_level, risk_score,
                     alert_image_url or "—",
                 )
 
@@ -190,7 +262,7 @@ def run_pipeline(video_path: str, video_id: int) -> None:
     except Exception:
         # ---- On any exception: log, release cap, mark failed -----------
         logger.exception(
-            "Pipeline failed for video_id=%s at frame %d", video_id, frame_number
+            "Pipeline failed for video_id=%s at raw_frame=%d", video_id, raw_frame_index
         )
         if cap is not None:
             cap.release()
@@ -203,8 +275,8 @@ def run_pipeline(video_path: str, video_id: int) -> None:
     # ------------------------------------------------------------------
     cap.release()
     logger.info(
-        "Pipeline completed for video_id=%s — processed %d frames.",
-        video_id, frame_number,
+        "Pipeline completed for video_id=%s — read %d raw frames, analysed %d sampled frames.",
+        video_id, raw_frame_index, processed_frames,
     )
 
     try:

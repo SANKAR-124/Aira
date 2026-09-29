@@ -18,13 +18,16 @@ cloudinary.config(
 )
 
 
-def upload_image(image_array_or_path: Union[np.ndarray, str]) -> str:
+def upload_image(image_array_or_path: Union[np.ndarray, str], timeout: int = 60) -> str:
     """
     Upload an image to Cloudinary and return the secure URL.
 
     Args:
         image_array_or_path: Either an OpenCV NumPy BGR image array
                              or an absolute file path string to an image.
+        timeout:             Request timeout in seconds (default 60).
+                             Passed directly to the Cloudinary SDK so uploads
+                             don't hang indefinitely on network failures.
 
     Returns:
         The secure Cloudinary URL (str) of the uploaded image.
@@ -43,6 +46,7 @@ def upload_image(image_array_or_path: Union[np.ndarray, str]) -> str:
             byte_stream,
             folder="rcmp/alerts",
             resource_type="image",
+            timeout=timeout,
         )
     elif isinstance(image_array_or_path, str):
         if not os.path.isfile(image_array_or_path):
@@ -52,6 +56,7 @@ def upload_image(image_array_or_path: Union[np.ndarray, str]) -> str:
             image_array_or_path,
             folder="rcmp/alerts",
             resource_type="image",
+            timeout=timeout,
         )
     else:
         raise TypeError(

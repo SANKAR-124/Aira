@@ -256,6 +256,53 @@ c. Push to GitHub.
 
 ---
 
+### Stage 12 — Pipeline Optimisation & Risk Engine Recalibration (rev 2)
+
+**Problem:**  After tuning the risk formula for testing, a 22-second video produced 200+ "high" and "severe" alerts with a matching Cloudinary upload for every one of them.  Two root causes were identified:
+1. `MAX_EXPECTED_CROWD` was set to `80` (a test value), making even sparsely populated frames score dangerously high.
+2. The pipeline processed every single frame, and uploaded a Cloudinary image for every frame whose risk level crossed the threshold — no batching, no cooldown.
+
+**Changes made (both files under `app/ai/`):**
+
+#### `risk_engine.py` — Threshold recalibration
+
+| Constant / parameter | Old value | New value | Reason |
+|---|---|---|---|
+| `MAX_EXPECTED_CROWD` | `80` | `200` | Realistic upper bound for a busy station platform camera view. |
+| Motion multiplier — very still (< threshold px/frame) | threshold=0.5, ×0.8 | threshold=1.0, ×0.8 | Wider still-crowd band; very small optical-flow values were wrongly classified as "walking". |
+| Motion multiplier — walking (< threshold px/frame) | threshold=1.5, ×1.2 | threshold=3.0, ×1.1 | Threshold raised to accommodate normal pedestrian movement; multiplier eased from 1.2 → 1.1. |
+| Motion multiplier — panic (≥ threshold px/frame) | ×1.8 | ×1.5 | 1.8× was too aggressive; amplified routine movement into "severe". |
+
+Risk-level category boundaries (`low < 30`, `moderate < 60`, `high < 80`, `severe ≥ 80`) are **unchanged** — only the score itself is better-calibrated.
+
+#### `pipeline.py` — Frame sampling only (rev 3, current)
+
+One tuning constant controls the entire upload volume:
+
+| Constant | Value | Effect |
+|---|---|---|
+| `FRAME_SAMPLE_INTERVAL` | `5` | Only 1 in every 5 frames is passed through CSRNet + optical flow. At 25 fps this gives ~5 analysis points/second — sufficient for crowd monitoring — while reducing inference work by **80 %**. Skipped frames still advance `prev_frame` so optical-flow accuracy on the next sampled pair is preserved. |
+
+**Why `ALERT_COOLDOWN_SEC` was removed (rev 2 → rev 3):**
+
+Rev 2 introduced a `ALERT_COOLDOWN_SEC = 3.0` cooldown that only allowed one Cloudinary upload per 3 seconds of video time. The problem: high/severe frames within the cooldown window were still recorded in `analytics_events` with `alert_image_url = NULL`. The dashboard rendered all high/severe events including those NULL-url rows, producing broken `<img>` icons. Removing the cooldown ensures every sampled high/severe frame always has a valid Cloudinary URL — no NULL `alert_image_url`, no broken images.
+
+**Expected impact on a 22-second, 25-fps video (rev 3):**
+
+| Metric | Before (rev 1) | Rev 2 | Rev 3 (current) |
+|---|---|---|---|
+| Frames analysed | ~550 | ~110 | ~110 |
+| Max Cloudinary uploads | ~200+ | ≤ 7 (broken images) | = high/severe sampled frames |
+| Broken dashboard images | Yes | Yes (NULL urls) | **None** |
+| Processing time | Very slow | ~80% faster | ~80% faster |
+
+**How to re-tune in the future:**
+- Increase `MAX_EXPECTED_CROWD` if the venue has more than 200 people in a typical camera shot.
+- Adjust `FRAME_SAMPLE_INTERVAL` (e.g., `10`) for longer/higher-fps videos to further reduce upload count.
+- Do **not** re-introduce a cooldown without also updating the dashboard to handle NULL `alert_image_url` gracefully (e.g., show a placeholder card instead of a broken image).
+
+---
+
 ## 9. API endpoint reference
 
 All endpoints are public (JSON REST API). No session or cookies required.

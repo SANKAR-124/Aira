@@ -80,7 +80,16 @@ export default function Dashboard() {
               {alerts.map(alert => (
                 <div key={alert.id} className="alert-card" onClick={() => setSelectedAlert(alert)}>
                   <div className="alert-image-wrapper">
-                    <img src={alert.alert_image_url} alt="Alert heatmap" loading="lazy" />
+                    <img
+                      src={alert.alert_image_url}
+                      alt="Alert heatmap"
+                      loading="lazy"
+                      onError={e => {
+                        e.target.onerror = null;
+                        e.target.style.display = 'none';
+                        e.target.parentNode.style.background = '#1e293b';
+                      }}
+                    />
                   </div>
                   <div className="alert-info">
                     <span className="font-mono text-sm">{alert.timestamp_sec}s</span>
